@@ -38,66 +38,108 @@ class BookSearchScreen extends StatefulWidget {
 }
 
 class _BookSearchScreenState extends State<BookSearchScreen> {
-  final TextEditingController _controller = TextEditingController();
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _copiesController = TextEditingController();
+
   Map<String, dynamic>? _book;
+  String _docId = ""; // to store document ID for updating
   String _message = "";
 
   Future<void> _searchBook() async {
-  final title = _controller.text.trim();
+    final title = _titleController.text.trim();
 
-  if (title.isEmpty) {
-    setState(() => _message = "Please enter a book title.");
-    return;
-  }
-
-  try {
-    print("Searching for title: '$title'");
-
-    final snapshot = await FirebaseFirestore.instance
-        .collection('Books') // ✅ correct collection name
-        .where('title', isEqualTo: title)
-        .get();
-
-    print("Documents found: ${snapshot.docs.length}");
-
-    if (snapshot.docs.isNotEmpty) {
-      setState(() {
-        _book = snapshot.docs.first.data();
-        _message = "";
-      });
-    } else {
-      setState(() {
-        _book = null;
-        _message = "No book found with title '$title'.";
-      });
+    if (title.isEmpty) {
+      setState(() => _message = "Please enter a book title.");
+      return;
     }
-  } catch (e) {
-    setState(() {
-      _message = "Error: $e";
-      _book = null;
-    });
-  }
-}
 
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('Books')
+          .where('title', isEqualTo: title)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final doc = snapshot.docs.first;
+        setState(() {
+          _book = doc.data();
+          _docId = doc.id;
+          _copiesController.text = _book!['copies'].toString();
+          _message = "";
+        });
+      } else {
+        setState(() {
+          _book = null;
+          _message = "No book found with this title.";
+        });
+      }
+    } catch (e) {
+      setState(() => _message = "Error: $e");
+    }
+  }
+
+  Future<void> _updateCopies() async {
+    if (_docId.isEmpty) return;
+
+    final newCopies = int.tryParse(_copiesController.text.trim());
+    if (newCopies == null) {
+      setState(() => _message = "Enter a valid number.");
+      return;
+    }
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('Books')
+          .doc(_docId)
+          .update({'copies': newCopies});
+
+      // update displayed info
+      setState(() {
+        _book!['copies'] = newCopies;
+        _message = "✅ Copies Updated Successfully!";
+      });
+    } catch (e) {
+      setState(() => _message = "Error updating copies: $e");
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Library Book Search")),
+      appBar: AppBar(title: const Text("Update Book Copies")),
       body: Padding(
-        padding: const EdgeInsets.all(20.0),
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             TextField(
-              controller: _controller,
-              decoration: const InputDecoration(
-                labelText: "Enter book title",
+              controller: _titleController,
+              decoration: InputDecoration(
+                labelText: "Enter Book Title",
                 border: OutlineInputBorder(),
               ),
             ),
+            const SizedBox(height: 15),
+
+            TextField(
+              controller: _copiesController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: "Enter New Copies",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 15),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                ElevatedButton(onPressed: _searchBook, child: const Text("Search")),
+                ElevatedButton(onPressed: _updateCopies, child: const Text("Update")),
+              ],
+            ),
+
             const SizedBox(height: 20),
-            ElevatedButton(onPressed: _searchBook, child: const Text("Search")),
-            const SizedBox(height: 30),
+
             if (_book != null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -105,15 +147,11 @@ class _BookSearchScreenState extends State<BookSearchScreen> {
                   Text("Title: ${_book!['title']}"),
                   Text("Author: ${_book!['author']}"),
                   Text("Copies Available: ${_book!['copies']}"),
-                  if (_book!['copies'] == 0)
-                    const Text(
-                      "Not Available – All Copies Issued",
-                      style: TextStyle(color: Colors.red),
-                    ),
                 ],
-              )
-            else if (_message.isNotEmpty)
-              Text(_message, style: const TextStyle(color: Colors.red)),
+              ),
+
+            if (_message.isNotEmpty)
+              Text(_message, style: const TextStyle(color: Colors.blue)),
           ],
         ),
       ),
